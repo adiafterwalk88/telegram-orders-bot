@@ -47,6 +47,11 @@ def handle_message(msg):
 @app.route('/orders')
 def get_orders():
     return jsonify(orders)
+    @app.route('/clear')
+def clear_orders():
+    global orders
+    orders = []
+    return jsonify({"ok": True})
 
 @app.route('/')
 def home():
