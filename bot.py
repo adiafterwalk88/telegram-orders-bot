@@ -2,7 +2,7 @@ import requests
 from flask import Flask, jsonify, request
 import os
 
-TOKEN = "8606571929:AAFqbhJqyunPuKO4zDlaedNHYO_JGXPfLhQ"
+TOKEN = "8606571929:AAFqbhJqyunPuO4zDlaedNHYO_JGXPaLhQ"
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
 orders = []
