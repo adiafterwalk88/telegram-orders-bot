@@ -1,6 +1,5 @@
 import requests
-from flask import Flask, jsonify
-import threading
+from flask import Flask, jsonify, request
 import os
 
 TOKEN = "8606571929:AAFqbhJqyunPuKO4zDlaedNHYO_JGXPfLhQ"
@@ -44,10 +43,18 @@ def handle_message(msg):
     else:
         create_order(text, chat_id)
 
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    data = request.json
+    if 'message' in data:
+        handle_message(data['message'])
+    return jsonify({"ok": True})
+
 @app.route('/orders')
 def get_orders():
     return jsonify(orders)
-    @app.route('/clear')
+
+@app.route('/clear')
 def clear_orders():
     global orders
     orders = []
@@ -57,19 +64,9 @@ def clear_orders():
 def home():
     return "OK"
 
-def poll():
-    offset = 0
-    while True:
-        try:
-            res = requests.get(f"{URL}/getUpdates", params={"offset": offset, "timeout": 30}).json()
-            if res.get('ok'):
-                for u in res['result']:
-                    offset = u['update_id'] + 1
-                    if 'message' in u:
-                        handle_message(u['message'])
-        except:
-            pass
-
 if __name__ == "__main__":
-    threading.Thread(target=poll, daemon=True).start()
+    # Устанавливаем webhook при запуске
+    webhook_url = "https://telegram-orders-bot-7k4f.onrender.com/webhook"
+    requests.post(f"{URL}/setWebhook", json={"url": webhook_url})
+    print("Webhook установлен")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
