@@ -96,7 +96,7 @@ def calculate_price(original_price, user_id, url='', desc=''):
 
 def update_client_stats(user_id, price, completed=False):
     if user_id not in clients:
-        clients[user_id] = {"name": "", "phone": "", "orders_count": 0, "completed_orders": 0, "total_sum": 0}
+        clients[user_id] = {"name": "", "phone": "", "address": "", "orders_count": 0, "completed_orders": 0, "total_sum": 0}
     c = clients[user_id]
     if completed:
         c['completed_orders'] = c.get('completed_orders', 0) + 1
@@ -117,39 +117,98 @@ def parse_brest_motors(url):
         headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
+        
         result = {'url': url, 'desc': '', 'phone': '', 'price': 0, 'sku': '', 'brand': '', 'available': 'Проверить'}
+        
         h1 = soup.find('h1', itemprop='name')
         if h1: result['desc'] = h1.get_text(strip=True)
+        elif soup.find('h1'): result['desc'] = soup.find('h1').get_text(strip=True)
+        
         sku = soup.find('span', itemprop='sku')
         if sku: result['sku'] = sku.get_text(strip=True)
+        
         brand = soup.find('span', itemprop='name')
         if brand and brand.parent.name == 'a': result['brand'] = brand.get_text(strip=True)
+        
         if result['sku']: result['desc'] += f' (Арт: {result["sku"]})'
         if result['brand']: result['desc'] += f' - {result["brand"]}'
+        
+        price_found = False
+        
         for script in soup.find_all('script', type='application/ld+json'):
             try:
                 data = json.loads(script.string)
-                if 'offers' in data:
-                    result['price'] = float(data['offers'].get('price', 0))
-                    avail = data['offers'].get('availability', '')
-                    if 'InStock' in avail: result['available'] = '✅ В наличии'
-                    elif 'OutOfStock' in avail: result['available'] = '❌ Нет в наличии'
-                    elif 'PreOrder' in avail: result['available'] = '📦 Под заказ'
-                    break
+                if isinstance(data, dict):
+                    if 'offers' in data and isinstance(data['offers'], dict):
+                        result['price'] = float(data['offers'].get('price', 0))
+                        price_found = True
+                        avail = data['offers'].get('availability', '')
+                        if 'InStock' in str(avail): result['available'] = '✅ В наличии'
+                        elif 'OutOfStock' in str(avail): result['available'] = '❌ Нет в наличии'
+                        break
+                    if 'price' in data:
+                        result['price'] = float(data['price'])
+                        price_found = True
+                        break
             except: pass
-        if not result['price']:
-            price_el = soup.find('span', class_=re.compile(r'price|Price|autocalc'))
-            if price_el:
-                nums = re.findall(r'\d+', price_el.get_text().replace(' ', ''))
-                if nums: result['price'] = float(nums[0])
-        text = soup.get_text()
-        if 'в наличии' in text.lower(): result['available'] = '✅ В наличии'
-        elif 'нет в наличии' in text.lower(): result['available'] = '❌ Нет в наличии'
-        elif 'под заказ' in text.lower(): result['available'] = '📦 Под заказ'
+        
+        if not price_found:
+            for meta in soup.find_all('meta'):
+                prop = str(meta.get('property', '') + meta.get('itemprop', ''))
+                if 'price' in prop.lower():
+                    content = meta.get('content', '')
+                    nums = re.findall(r'\d+', str(content).replace(' ', ''))
+                    if nums:
+                        result['price'] = float(nums[0])
+                        price_found = True
+                        break
+        
+        if not price_found:
+            price_selectors = [
+                {'class': re.compile(r'price|Price|product-price|special-price|autocalc-product-price')},
+                {'itemprop': 'price'},
+                {'id': re.compile(r'price|Price')},
+            ]
+            for sel in price_selectors:
+                el = soup.find(['span', 'div', 'p', 'strong', 'b'], sel)
+                if el:
+                    text = el.get_text(strip=True)
+                    text_clean = re.sub(r'[^\d.,]', '', text.replace(' ', ''))
+                    nums = re.findall(r'\d+', text_clean)
+                    if nums:
+                        result['price'] = float(nums[0])
+                        price_found = True
+                        break
+        
+        if not price_found:
+            text = soup.get_text()
+            price_patterns = [
+                r'цена[:\s]*(\d+[\.,\s]*\d*)',
+                r'стоимость[:\s]*(\d+[\.,\s]*\d*)',
+                r'(\d+[\.,\s]*\d*)\s*(?:р|руб|Br|BYN|бел\.руб)',
+                r'(\d+[\.,\s]*\d*)\s*(?:р\.|руб\.|Br)',
+            ]
+            for pat in price_patterns:
+                match = re.search(pat, text, re.IGNORECASE)
+                if match:
+                    num_str = match.group(1).replace(' ', '').replace(',', '.')
+                    try:
+                        result['price'] = float(num_str)
+                        price_found = True
+                        break
+                    except: pass
+        
         phones = re.findall(r'\+375\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}', resp.text)
         if phones: result['phone'] = phones[0]
+        
+        text = soup.get_text().lower()
+        if 'в наличии' in text: result['available'] = '✅ В наличии'
+        elif 'нет в наличии' in text or 'распродано' in text: result['available'] = '❌ Нет в наличии'
+        elif 'под заказ' in text: result['available'] = '📦 Под заказ'
+        
         return result
-    except:
+    except Exception as e:
+        print(f"Ошибка: {e}")
         return {'url': url, 'desc': 'Ошибка', 'phone': '', 'price': 0}
 
 def handle_message(msg):
@@ -159,7 +218,7 @@ def handle_message(msg):
     username = msg.get('from', {}).get('first_name', 'Клиент')
     
     if user_id not in clients:
-        clients[user_id] = {"name": username, "phone": "", "orders_count": 0, "completed_orders": 0, "total_sum": 0}
+        clients[user_id] = {"name": username, "phone": "", "address": "", "orders_count": 0, "completed_orders": 0, "total_sum": 0}
     last_message_time[user_id] = time.time()
 
     # Админ-панель
@@ -198,7 +257,7 @@ def handle_message(msg):
     elif text.startswith('/start'):
         c = clients[user_id]
         level, data = get_loyalty_level(user_id)
-        send_message(chat_id, f"🤖 Бот заказов brest-motors.by\n\n👤 ID: <code>{user_id}</code>\n📱 Тел: {c.get('phone','—')}\n🏷️ Уровень: {data['name']} ({data['discount']}%)\n📊 Заказов: {c.get('orders_count',0)}\n\n🔗 Пришлите ссылку или текст заказа")
+        send_message(chat_id, f"🤖 Бот заказов brest-motors.by\n\n👤 ID: <code>{user_id}</code>\n📱 Тел: {c.get('phone','—')}\n📍 Адрес: {c.get('address','—')}\n🏷️ Уровень: {data['name']} ({data['discount']}%)\n📊 Заказов: {c.get('orders_count',0)}\n\n🔗 Пришлите ссылку или текст заказа")
 
     elif text.startswith('/profile'):
         c = clients[user_id]
@@ -208,7 +267,7 @@ def handle_message(msg):
             if d['min_sum'] > c.get('total_sum', 0):
                 next_level = (lvl, d)
                 break
-        resp = f"👤 <b>Профиль</b>\n\nID: <code>{user_id}</code>\nИмя: {c['name']}\nТел: {c.get('phone','—')}\n📊 Заказов: {c.get('orders_count',0)}\n✅ Выполнено: {c.get('completed_orders',0)}\n💵 Сумма: {c.get('total_sum',0)} Br\n🏷️ Уровень: {data['name']} ({data['discount']}%)\n"
+        resp = f"👤 <b>Профиль</b>\n\nID: <code>{user_id}</code>\nИмя: {c['name']}\n📱 Тел: {c.get('phone','—')}\n📍 Адрес: {c.get('address','—')}\n📊 Заказов: {c.get('orders_count',0)}\n✅ Выполнено: {c.get('completed_orders',0)}\n💵 Сумма: {c.get('total_sum',0)} Br\n🏷️ Уровень: {data['name']} ({data['discount']}%)\n"
         if next_level:
             need = next_level[1]['min_sum'] - c.get('total_sum', 0)
             resp += f"\n📈 До {next_level[1]['name']}: {max(0,need)} Br"
@@ -228,22 +287,70 @@ def handle_message(msg):
         clients[user_id]['phone'] = text.split('/phone ')[1].strip()
         send_message(chat_id, "✅ Телефон сохранён")
 
+    elif text.startswith('/address '):
+        addr = text.split('/address ', 1)[1].strip()
+        clients[user_id]['address'] = addr
+        send_message(chat_id, f"✅ Адрес сохранён: {addr}")
+
     else:
         urls = re.findall(r'https?://[^\s]+', text)
+        client_phone = clients[user_id].get('phone', '')
+        client_address = clients[user_id].get('address', '')
+        
+        # Шаг 1: Нет телефона
+        if not client_phone:
+            if urls:
+                clients[user_id]['pending_url'] = urls[0]
+                clients[user_id]['pending_text'] = text
+                send_message(chat_id, "📱 Для оформления заказа укажите ваш номер телефона.\n\nФормат: +375 29 123 45 67")
+            else:
+                phone_match = re.search(r'(\+?\d{10,15})', text.replace(' ', '').replace('-', ''))
+                if phone_match:
+                    clients[user_id]['phone'] = phone_match.group(1)
+                    send_message(chat_id, f"✅ Телефон сохранён!\n\n📍 Теперь укажите ваш адрес доставки.")
+                else:
+                    send_message(chat_id, "📱 Укажите ваш номер телефона.\n\nФормат: +375 29 123 45 67")
+            return
+        
+        # Шаг 2: Нет адреса
+        if not client_address:
+            if urls:
+                clients[user_id]['pending_url'] = urls[0]
+                clients[user_id]['pending_text'] = text
+                send_message(chat_id, "📍 Укажите ваш адрес доставки.\n\nФормат: г. Брест, ул. Ленина, д. 1")
+            else:
+                phone_match = re.search(r'^(\+?\d{10,15})$', text.replace(' ', '').replace('-', ''))
+                if phone_match:
+                    clients[user_id]['phone'] = phone_match.group(1)
+                    send_message(chat_id, f"✅ Телефон обновлён!\n\n📍 Теперь укажите ваш адрес доставки.")
+                else:
+                    clients[user_id]['address'] = text.strip()
+                    send_message(chat_id, f"✅ Адрес сохранён: {text.strip()}\n\nТеперь пришлите ссылку на товар или описание заказа.")
+            return
+        
+        # Шаг 3: Создание заказа
+        pending_url = clients[user_id].get('pending_url', '')
+        pending_text = clients[user_id].get('pending_text', '')
+        if pending_url:
+            urls = [pending_url]
+            text = pending_text
+            clients[user_id].pop('pending_url', None)
+            clients[user_id].pop('pending_text', None)
+        
         if urls: send_message(chat_id, f"🔍 Парсинг {urls[0]}...")
         
         if urls and 'brest-motors.by' in urls[0]:
             data = parse_brest_motors(urls[0])
         else:
             phone_match = re.search(r'(\+?\d{10,15})', text.replace(' ', '').replace('-', ''))
-            phone = phone_match.group(1) if phone_match else clients[user_id].get('phone', 'Не указан')
+            phone = phone_match.group(1) if phone_match else client_phone
             price_match = re.search(r'(\d+)\s*(?:р|руб|br|BYN|Br)', text, re.IGNORECASE)
             price = float(price_match.group(1)) if price_match else 0
             desc = text
             if phone_match: desc = desc.replace(phone_match.group(0), '')
             if price_match: desc = desc.replace(price_match.group(0), '')
             desc = desc.strip() or 'Без описания'
-            data = {'phone': phone, 'desc': desc, 'price': price, 'url': urls[0] if urls else ''}
+            data = {'phone': phone, 'desc': desc, 'price': price, 'url': urls[0] if urls else '', 'address': client_address}
 
         original_price = data.get('price', 0)
         final_price, discount_percent, level_name = calculate_price(original_price, user_id, data.get('url', ''), data['desc'])
@@ -258,11 +365,11 @@ def handle_message(msg):
         data['final_price'] = final_price
         data['discount'] = discount_percent
         data['loyalty_level'] = level_name
+        if not data.get('address'): data['address'] = client_address
         orders.append(data)
         clients[user_id]['orders_count'] = clients[user_id].get('orders_count', 0) + 1
-        if data.get('phone') != 'Не указан': clients[user_id]['phone'] = data.get('phone', '')
 
-        resp = f"✅ <b>Заказ №{data['id']}!</b>\n👤 {username}\n🏷️ {level_name}\n📝 {data['desc'][:200]}\n📱 {data['phone']}\n"
+        resp = f"✅ <b>Заказ №{data['id']}!</b>\n👤 {username}\n🏷️ {level_name}\n📝 {data['desc'][:200]}\n📱 {data['phone']}\n📍 {data.get('address','—')}\n"
         if discount_percent > 0:
             resp += f"💰 Базовая: {original_price} Br\n🎉 Скидка: {discount_percent}%\n💎 Итог: <b>{final_price} Br</b>\n"
         else:
@@ -271,7 +378,7 @@ def handle_message(msg):
         if data.get('url'): resp += f"🔗 {data['url']}"
         send_message(chat_id, resp)
 
-        staff_msg = f"🔔 Новый заказ №{data['id']}!\n👤 {username} ({level_name})\n📝 {data['desc'][:150]}\n📱 {data['phone']}\n"
+        staff_msg = f"🔔 Новый заказ №{data['id']}!\n👤 {username} ({level_name})\n📝 {data['desc'][:150]}\n📱 {data['phone']}\n📍 {data.get('address','—')}\n"
         if discount_percent > 0:
             staff_msg += f"💰 База: {original_price} Br | -{discount_percent}% | Итог: {final_price} Br\n"
         else:
@@ -313,5 +420,5 @@ def home(): return "OK"
 
 if __name__ == "__main__":
     requests.post(f"{URL}/setWebhook", json={"url": "https://telegram-orders-bot-7k4f.onrender.com/webhook"})
-    print("Бот v5 запущен: скидки, категории, админ-панель")
+    print("Бот v6 запущен")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
