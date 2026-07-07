@@ -291,7 +291,30 @@ def handle_message(msg):
         addr = text.split('/address ', 1)[1].strip()
         clients[user_id]['address'] = addr
         send_message(chat_id, f"✅ Адрес сохранён: {addr}")
-
+    elif text.startswith('/help'):
+        resp = "🤖 <b>Бот заказов brest-motors.by</b>\n\n"
+        resp += "<b>📋 Основные команды:</b>\n"
+        resp += "/start — регистрация и приветствие\n"
+        resp += "/profile — мой профиль и скидка\n"
+        resp += "/orders — мои заказы (последние 5)\n\n"
+        resp += "<b>📱 Контакты:</b>\n"
+        resp += "/phone +375291234567 — сохранить телефон\n"
+        resp += "/address г. Брест, ул. Ленина 5 — сохранить адрес\n\n"
+        resp += "<b>🛒 Как заказать:</b>\n"
+        resp += "1. Пришлите ссылку на товар с brest-motors.by\n"
+        resp += "2. Или напишите: описание, цена\n"
+        resp += "3. Бот сам найдет цену, артикул и наличие\n\n"
+        resp += "<b>💰 Скидки:</b>\n"
+        resp += "• Бронза — 0%\n"
+        resp += "• Серебро (2000+ Br) — 2%\n"
+        resp += "• Золото (4000+ Br) — 4%\n"
+        resp += "• Платина (6000+ Br) — 6%\n"
+        resp += "• Бриллиант (10000+ Br) — 7%\n"
+        resp += "На запчасти Stihl/Husqvarna — макс. 2%\n\n"
+        resp += "<b>📞 Связь:</b>\n"
+        resp += "По вопросам: +375 29 818 18 04\n"
+        resp += "Email: Kvalimbel@mail.ru"
+        send_message(chat_id, resp)
     else:
         urls = re.findall(r'https?://[^\s]+', text)
         client_phone = clients[user_id].get('phone', '')
