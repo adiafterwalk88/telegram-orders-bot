@@ -6,12 +6,15 @@ import json
 from bs4 import BeautifulSoup
 import time
 import threading
+from supabase import create_client
 
 TOKEN = "8606571929:AAFqbhJqyunPuKO4zDlaedNHYO_JGXPaLhQ"
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
-orders = []
-clients = {}
+SUPABASE_URL = "https://oi1gbpcpcjfrZ6ZocysTuw.supabase.co"
+SUPABASE_KEY = "sb_publishable_Oi1gbpCpzhfrZ6ZocysTuw__bbAJRzA"
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 ADMIN_IDS = ["8171279171"]
 STAFF_IDS = ["8171279171"]
 last_message_time = {}
@@ -31,34 +34,37 @@ RESTRICTED_BRANDS = ['STIHL', 'HUSQVARNA', 'ШТИЛЬ', 'ХУСКВАРНА', '
 MAX_DISCOUNT_RESTRICTED = 2
 
 RESTRICTED_CATEGORIES = [
-    'cep', 'цепь', 'shina', 'шина', 'zvezdochka', 'звездочка', 'maslyanyj nasos', 'масляный насос',
-    'vozdushnyj filtr', 'воздушный фильтр', 'toplivnyj filtr', 'топливный фильтр', 'svecha', 'свеча',
-    'katushka zazhiganiya', 'катушка зажигания', 'karbyurator', 'карбюратор', 'porshen', 'поршень',
-    'cilindr', 'цилиндр', 'kolca', 'кольца', 'kolenval', 'коленвал', 'shatun', 'шатун',
-    'starter', 'стартер', 'pruzhina', 'пружина', 'shnur', 'шнур', 'sceplenie', 'сцепление',
-    'tormoz cepi', 'тормоз цепи', 'glushitel', 'глушитель', 'shlang', 'шланг', 'bak', 'бак',
-    'rukoyatka', 'рукоятка', 'kozhuh', 'кожух', 'natyazhitel', 'натяжитель', 'gajka', 'гайка',
+    'cep', 'цепь', 'shina', 'шина', 'zvezdochka', 'звездочка', 'svecha', 'свеча',
+    'katushka', 'катушка', 'karbyurator', 'карбюратор', 'porshen', 'поршень',
+    'cilindr', 'цилиндр', 'starter', 'стартер', 'glushitel', 'глушитель',
     'salnik', 'сальник', 'podshipnik', 'подшипник', 'prokladka', 'прокладка',
-    'praimer', 'праймер', 'val', 'вал', 'shtanga', 'штанга', 'reduktor', 'редуктор',
-    'golovka', 'головка', 'nozh', 'нож', 'leska', 'леска', 'remen', 'ремень',
-    'klapan', 'клапан', 'maslosemnyj', 'маслосъемный', 'shchup', 'щуп', 'grm', 'грм',
-    'bolt', 'болт', 'adapter', 'адаптер', 'koleso', 'колесо', 'travosbornik', 'травосборник',
-    'tros', 'трос', 'privod', 'привод', 'transmissiya', 'трансмиссия',
-    'zapchast', 'запчаст', 'rashod', 'расход', 'maslo', 'масло', 'smazka', 'смазка',
-    'filt', 'фильт', 'remkomplekt', 'ремкомплект', 'kryshka', 'крышка', 'probka', 'пробка',
+    'nozh', 'нож', 'leska', 'леска', 'remen', 'ремень', 'filt', 'фильт',
+    'maslo', 'масло', 'zapchast', 'запчаст', 'rashod', 'расход',
 ]
 
 EQUIPMENT_CATEGORIES = [
-    'benzopil', 'бензопил', 'elektropil', 'электропил', 'pila', 'пила',
-    'gazonokosil', 'газонокосил', 'motokos', 'мотокос', 'trimmer', 'триммер',
+    'benzopil', 'бензопил', 'gazonokosil', 'газонокосил', 'motokos', 'мотокос',
     'generator', 'генератор', 'kompressor', 'компрессор', 'svarochn', 'сварочн',
-    'motoblok', 'мотоблок', 'трактор', 'traktor', 'kultivator', 'культиватор',
-    'dvigatel', 'двигатель', 'motopomp', 'мотопомп', 'vibroplit', 'виброплит',
-    'snegoubor', 'снегоубор', 'lodochn', 'лодочн', 'minitraktor', 'rajder', 'райдер',
+    'motoblok', 'мотоблок', 'kultivator', 'культиватор', 'dvigatel', 'двигатель',
+    'motopomp', 'мотопомп', 'vibroplit', 'виброплит', 'snegoubor', 'снегоубор',
 ]
 
+def get_client(user_id):
+    res = supabase.table('clients').select('*').eq('user_id', user_id).execute()
+    if res.data:
+        return res.data[0]
+    return {"user_id": user_id, "name": "", "phone": "", "address": "", "orders_count": 0, "total_sum": 0, "loyalty_level": "bronze"}
+
+def update_client(user_id, data):
+    existing = supabase.table('clients').select('*').eq('user_id', user_id).execute()
+    if existing.data:
+        supabase.table('clients').update(data).eq('user_id', user_id).execute()
+    else:
+        data['user_id'] = user_id
+        supabase.table('clients').insert(data).execute()
+
 def get_loyalty_level(user_id):
-    c = clients.get(user_id, {})
+    c = get_client(user_id)
     total_sum = c.get('total_sum', 0)
     level = 'bronze'
     for lvl, data in sorted(LOYALTY_LEVELS.items(), key=lambda x: x[1]['min_sum'], reverse=True):
@@ -70,14 +76,11 @@ def get_loyalty_level(user_id):
 def is_restricted(url, desc):
     text = (url + ' ' + desc).lower()
     for eq in EQUIPMENT_CATEGORIES:
-        if eq in text:
-            return False
+        if eq in text: return False
     for brand in RESTRICTED_BRANDS:
-        if brand.lower() in text:
-            return True
+        if brand.lower() in text: return True
     for cat in RESTRICTED_CATEGORIES:
-        if cat in text:
-            return True
+        if cat in text: return True
     return False
 
 def calculate_price(original_price, user_id, url='', desc=''):
@@ -90,14 +93,6 @@ def calculate_price(original_price, user_id, url='', desc=''):
         return round(discounted, 2), discount, data['name']
     return original_price, 0, data['name']
 
-def update_client_stats(user_id, price, completed=False):
-    if user_id not in clients:
-        clients[user_id] = {"name": "", "phone": "", "address": "", "orders_count": 0, "completed_orders": 0, "total_sum": 0}
-    c = clients[user_id]
-    if completed:
-        c['completed_orders'] = c.get('completed_orders', 0) + 1
-        c['total_sum'] = c.get('total_sum', 0) + price
-
 def send_message(chat_id, text):
     requests.post(f"{URL}/sendMessage", json={"chat_id": chat_id, "text": text, "parse_mode": "HTML"})
 
@@ -106,67 +101,43 @@ def send_to_staff(text):
         try: send_message(uid, text)
         except: pass
 
+def save_order(order_data):
+    supabase.table('orders').insert(order_data).execute()
+
+def get_new_orders():
+    res = supabase.table('orders').select('*').eq('status', 'Новый').order('id', desc=False).execute()
+    return res.data
+
+def mark_imported(order_ids):
+    for oid in order_ids:
+        supabase.table('orders').update({'status': 'Импортирован'}).eq('id', oid).execute()
+
 def parse_brest_motors(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
-        result = {'url': url, 'desc': '', 'phone': '', 'price': 0, 'sku': '', 'brand': '', 'available': 'Проверить'}
-        h1 = soup.find('h1', itemprop='name')
+        result = {'url': url, 'desc': '', 'phone': '', 'price': 0, 'available': 'Проверить'}
+        h1 = soup.find('h1', itemprop='name') or soup.find('h1')
         if h1: result['desc'] = h1.get_text(strip=True)
-        elif soup.find('h1'): result['desc'] = soup.find('h1').get_text(strip=True)
-        sku = soup.find('span', itemprop='sku')
-        if sku: result['sku'] = sku.get_text(strip=True)
-        brand = soup.find('span', itemprop='name')
-        if brand and brand.parent.name == 'a': result['brand'] = brand.get_text(strip=True)
-        if result['sku']: result['desc'] += f' (Арт: {result["sku"]})'
-        if result['brand']: result['desc'] += f' - {result["brand"]}'
-        price_found = False
         for script in soup.find_all('script', type='application/ld+json'):
             try:
                 data = json.loads(script.string)
-                if isinstance(data, dict):
-                    if 'offers' in data and isinstance(data['offers'], dict):
-                        result['price'] = float(data['offers'].get('price', 0))
-                        price_found = True
-                        avail = data['offers'].get('availability', '')
-                        if 'InStock' in str(avail): result['available'] = '✅ В наличии'
-                        elif 'OutOfStock' in str(avail): result['available'] = '❌ Нет в наличии'
-                        break
-                    if 'price' in data:
-                        result['price'] = float(data['price'])
-                        price_found = True
-                        break
+                if isinstance(data, dict) and 'offers' in data:
+                    result['price'] = float(data['offers'].get('price', 0))
+                    avail = data['offers'].get('availability', '')
+                    if 'InStock' in str(avail): result['available'] = '✅ В наличии'
+                    elif 'OutOfStock' in str(avail): result['available'] = '❌ Нет в наличии'
+                    break
             except: pass
-        if not price_found:
-            for meta in soup.find_all('meta'):
-                prop = str(meta.get('property', '') + meta.get('itemprop', ''))
-                if 'price' in prop.lower():
-                    content = meta.get('content', '')
-                    nums = re.findall(r'\d+', str(content).replace(' ', ''))
-                    if nums: result['price'] = float(nums[0]); break
-        if not price_found:
-            for sel in [{'class': re.compile(r'price|Price|product-price|autocalc')}, {'itemprop': 'price'}, {'id': re.compile(r'price|Price')}]:
-                el = soup.find(['span', 'div', 'p', 'strong', 'b'], sel)
-                if el:
-                    nums = re.findall(r'\d+', re.sub(r'[^\d.,]', '', el.get_text(strip=True).replace(' ', '')))
-                    if nums: result['price'] = float(nums[0]); break
-        if not price_found:
+        if not result['price']:
             text = soup.get_text()
-            for pat in [r'цена[:\s]*(\d+[\.,\s]*\d*)', r'стоимость[:\s]*(\d+[\.,\s]*\d*)', r'(\d+[\.,\s]*\d*)\s*(?:р|руб|Br|BYN)', r'(\d+[\.,\s]*\d*)\s*(?:р\.|руб\.|Br)']:
-                match = re.search(pat, text, re.IGNORECASE)
-                if match:
-                    try: result['price'] = float(match.group(1).replace(' ', '').replace(',', '.')); break
-                    except: pass
+            match = re.search(r'(\d+[\.,\s]*\d*)\s*(?:р|руб|Br|BYN)', text)
+            if match: result['price'] = float(match.group(1).replace(' ', '').replace(',', '.'))
         phones = re.findall(r'\+375\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}', resp.text)
         if phones: result['phone'] = phones[0]
-        text = soup.get_text().lower()
-        if 'в наличии' in text: result['available'] = '✅ В наличии'
-        elif 'нет в наличии' in text or 'распродано' in text: result['available'] = '❌ Нет в наличии'
-        elif 'под заказ' in text: result['available'] = '📦 Под заказ'
         return result
-    except Exception as e:
-        print(f"Ошибка: {e}")
+    except:
         return {'url': url, 'desc': 'Ошибка', 'phone': '', 'price': 0}
 
 def handle_message(msg):
@@ -175,134 +146,55 @@ def handle_message(msg):
     user_id = str(msg['from']['id'])
     username = msg.get('from', {}).get('first_name', 'Клиент')
     
-    if user_id not in clients:
-        clients[user_id] = {"name": username, "phone": "", "address": "", "orders_count": 0, "completed_orders": 0, "total_sum": 0}
+    c = get_client(user_id)
     last_message_time[user_id] = time.time()
 
-    # Админ-панель
-    if text.startswith('/admin') and user_id in ADMIN_IDS:
-        total = len(orders)
-        active = len([o for o in orders if o.get('status') != 'Выполнен'])
-        resp = f"📊 <b>Админ-панель</b>\n\n📦 Всего: {total}\n🔄 Активных: {active}\n👥 Клиентов: {len(clients)}\n\n<b>Последние 5:</b>\n"
-        for o in orders[-5:]:
-            resp += f"№{o['id']} | {o['desc'][:40]} | {o['price']} Br | {o.get('status','Новый')}\n"
-        send_message(chat_id, resp)
-
-    elif text.startswith('/all') and user_id in ADMIN_IDS:
-        resp = "📋 <b>Все заказы:</b>\n\n"
-        for o in orders:
-            resp += f"№{o['id']} | {o['desc'][:50]} | {o['price']} Br | {o.get('status','Новый')}\n"
-        send_message(chat_id, resp[:4000])
-
-    elif text.startswith('/done ') and user_id in ADMIN_IDS:
-        try:
-            oid = int(text.split()[1])
-            order = next((o for o in orders if o['id'] == oid), None)
-            if order:
-                order['status'] = 'Выполнен'
-                uid = order.get('user_id', '')
-                if uid: update_client_stats(uid, order.get('final_price', order.get('price', 0)), completed=True)
-                send_message(chat_id, f"✅ Заказ №{oid} выполнен!")
-                if uid: send_message(uid, f"🎉 Ваш заказ №{oid} выполнен!")
-            else:
-                send_message(chat_id, "❌ Не найден")
-        except:
-            send_message(chat_id, "❌ /done НОМЕР")
-
-    elif text.startswith('/help'):
-        resp = "🤖 <b>Бот заказов brest-motors.by</b>\n\n"
-        resp += "<b>📋 Основные команды:</b>\n"
-        resp += "/start — регистрация и приветствие\n"
-        resp += "/profile — мой профиль и скидка\n"
-        resp += "/orders — мои заказы (последние 5)\n\n"
-        resp += "<b>📱 Контакты:</b>\n"
-        resp += "/phone +375291234567 — сохранить телефон\n"
-        resp += "/address г. Брест, ул. Ленина 5 — сохранить адрес\n\n"
-        resp += "<b>🛒 Как заказать:</b>\n"
-        resp += "1. Пришлите ссылку на товар с brest-motors.by\n"
-        resp += "2. Или напишите: описание, цена\n"
-        resp += "3. Бот сам найдет цену, артикул и наличие\n\n"
-        resp += "<b>💰 Скидки:</b>\n"
-        resp += "• Бронза — 0%\n• Серебро (2000+ Br) — 2%\n• Золото (4000+ Br) — 4%\n• Платина (6000+ Br) — 6%\n• Бриллиант (10000+ Br) — 7%\nНа запчасти Stihl/Husqvarna — макс. 2%\n\n"
-        resp += "<b>📞 Связь:</b>\nПо вопросам: +375 29 818 18 04"
-        send_message(chat_id, resp)
-
-    # Клиентские команды
-    elif text.startswith('/start'):
-        c = clients[user_id]
+    if text.startswith('/start'):
         level, data = get_loyalty_level(user_id)
-        send_message(chat_id, f"🤖 Бот заказов brest-motors.by\n\n👤 ID: <code>{user_id}</code>\n📱 Тел: {c.get('phone','—')}\n📍 Адрес: {c.get('address','—')}\n🏷️ Уровень: {data['name']} ({data['discount']}%)\n📊 Заказов: {c.get('orders_count',0)}\n\n🔗 Пришлите ссылку или текст заказа")
-
+        send_message(chat_id, f"🤖 Бот заказов\n\n👤 ID: <code>{user_id}</code>\n📱 Тел: {c.get('phone','—')}\n🏷️ Уровень: {data['name']} ({data['discount']}%)\n\n🔗 Пришлите ссылку или текст заказа")
+    
     elif text.startswith('/profile'):
-        c = clients[user_id]
         level, data = get_loyalty_level(user_id)
         next_level = None
         for lvl, d in sorted(LOYALTY_LEVELS.items(), key=lambda x: x[1]['min_sum']):
             if d['min_sum'] > c.get('total_sum', 0): next_level = (lvl, d); break
-        resp = f"👤 <b>Профиль</b>\n\nID: <code>{user_id}</code>\nИмя: {c['name']}\n📱 Тел: {c.get('phone','—')}\n📍 Адрес: {c.get('address','—')}\n📊 Заказов: {c.get('orders_count',0)}\n✅ Выполнено: {c.get('completed_orders',0)}\n💵 Сумма: {c.get('total_sum',0)} Br\n🏷️ Уровень: {data['name']} ({data['discount']}%)\n"
-        if next_level: resp += f"\n📈 До {next_level[1]['name']}: {max(0, next_level[1]['min_sum'] - c.get('total_sum', 0))} Br"
+        resp = f"👤 Профиль\n\nID: <code>{user_id}</code>\n📱 Тел: {c.get('phone','—')}\n💵 Сумма: {c.get('total_sum',0)} Br\n🏷️ {data['name']} ({data['discount']}%)"
+        if next_level: resp += f"\n📈 До {next_level[1]['name']}: {max(0, next_level[1]['min_sum'] - c.get('total_sum',0))} Br"
         send_message(chat_id, resp)
-
+    
     elif text.startswith('/orders'):
-        user_orders = [o for o in orders if o.get('user_id') == user_id]
-        if not user_orders:
+        res = supabase.table('orders').select('*').eq('user_id', user_id).order('id', desc=True).limit(5).execute()
+        if not res.data:
             send_message(chat_id, "📋 Нет заказов")
         else:
-            resp = f"📋 <b>Заказы {username}:</b>\n\n"
-            for o in user_orders[-5:]:
-                resp += f"№{o['id']} | {o['desc'][:50]} | {o.get('final_price',o.get('price',0))} Br | {o.get('status','Новый')}\n"
+            resp = f"📋 Заказы {username}:\n\n"
+            for o in res.data:
+                resp += f"№{o['id']} | {o.get('product','')[:50]} | {o.get('price',0)} Br | {o.get('status','Новый')}\n"
             send_message(chat_id, resp)
-
+    
     elif text.startswith('/phone '):
-        clients[user_id]['phone'] = text.split('/phone ')[1].strip()
+        update_client(user_id, {'phone': text.split('/phone ')[1].strip()})
         send_message(chat_id, "✅ Телефон сохранён")
-
+    
     elif text.startswith('/address '):
-        addr = text.split('/address ', 1)[1].strip()
-        clients[user_id]['address'] = addr
-        send_message(chat_id, f"✅ Адрес сохранён: {addr}")
-
+        update_client(user_id, {'address': text.split('/address ', 1)[1].strip()})
+        send_message(chat_id, "✅ Адрес сохранён")
+    
+    elif text.startswith('/help'):
+        send_message(chat_id, "🤖 Бот заказов\n\n🔗 Пришлите ссылку на brest-motors.by\n📝 Или текст заказа\n\n/orders — мои заказы\n/profile — профиль\n/phone — сохранить телефон\n/address — сохранить адрес")
+    
     else:
         urls = re.findall(r'https?://[^\s]+', text)
-        client_phone = clients[user_id].get('phone', '')
-        client_address = clients[user_id].get('address', '')
+        client_phone = c.get('phone', '')
+        client_address = c.get('address', '')
         
         if not client_phone:
-            if urls:
-                clients[user_id]['pending_url'] = urls[0]
-                clients[user_id]['pending_text'] = text
-                send_message(chat_id, "📱 Для оформления заказа укажите ваш номер телефона.\n\nФормат: +375 29 123 45 67")
-            else:
-                phone_match = re.search(r'(\+?\d{10,15})', text.replace(' ', '').replace('-', ''))
-                if phone_match:
-                    clients[user_id]['phone'] = phone_match.group(1)
-                    send_message(chat_id, f"✅ Телефон сохранён!\n\n📍 Теперь укажите ваш адрес доставки.")
-                else:
-                    send_message(chat_id, "📱 Укажите ваш номер телефона.\n\nФормат: +375 29 123 45 67")
+            send_message(chat_id, "📱 Укажите номер телефона.\n/phone +375291234567")
             return
         
         if not client_address:
-            if urls:
-                clients[user_id]['pending_url'] = urls[0]
-                clients[user_id]['pending_text'] = text
-                send_message(chat_id, "📍 Укажите ваш адрес доставки.\n\nФормат: г. Брест, ул. Ленина, д. 1")
-            else:
-                phone_match = re.search(r'^(\+?\d{10,15})$', text.replace(' ', '').replace('-', ''))
-                if phone_match:
-                    clients[user_id]['phone'] = phone_match.group(1)
-                    send_message(chat_id, f"✅ Телефон обновлён!\n\n📍 Теперь укажите ваш адрес доставки.")
-                else:
-                    clients[user_id]['address'] = text.strip()
-                    send_message(chat_id, f"✅ Адрес сохранён: {text.strip()}\n\nТеперь пришлите ссылку на товар или описание заказа.")
+            send_message(chat_id, "📍 Укажите адрес доставки.\n/address г. Брест, ул. Ленина 5")
             return
-        
-        pending_url = clients[user_id].get('pending_url', '')
-        pending_text = clients[user_id].get('pending_text', '')
-        if pending_url:
-            urls = [pending_url]
-            text = pending_text
-            clients[user_id].pop('pending_url', None)
-            clients[user_id].pop('pending_text', None)
         
         if urls: send_message(chat_id, f"🔍 Парсинг {urls[0]}...")
         
@@ -317,56 +209,50 @@ def handle_message(msg):
             if phone_match: desc = desc.replace(phone_match.group(0), '')
             if price_match: desc = desc.replace(price_match.group(0), '')
             desc = desc.strip() or 'Без описания'
-            data = {'phone': phone, 'desc': desc, 'price': price, 'url': urls[0] if urls else '', 'address': client_address}
+            data = {'phone': phone, 'desc': desc, 'price': price, 'url': urls[0] if urls else ''}
 
         original_price = data.get('price', 0)
         final_price, discount_percent, level_name = calculate_price(original_price, user_id, data.get('url', ''), data['desc'])
         
-        data['id'] = len(orders) + 1
-        data['status'] = 'Новый'
-        data['executor'] = 'Не назначен'
-        data['user_id'] = user_id
-        data['customer'] = username
-        data['date'] = time.strftime('%d.%m.%Y')
-        data['original_price'] = original_price
-        data['final_price'] = final_price
-        data['discount'] = discount_percent
-        data['loyalty_level'] = level_name
-        if not data.get('address'): data['address'] = client_address
-        orders.append(data)
-        clients[user_id]['orders_count'] = clients[user_id].get('orders_count', 0) + 1
-
-        resp = f"✅ <b>Заказ №{data['id']}!</b>\n👤 {username}\n🏷️ {level_name}\n📝 {data['desc'][:200]}\n📱 {data['phone']}\n📍 {data.get('address','—')}\n"
-        if discount_percent > 0:
-            resp += f"💰 Базовая: {original_price} Br\n🎉 Скидка: {discount_percent}%\n💎 Итог: <b>{final_price} Br</b>\n"
-        else:
-            resp += f"💰 {final_price} Br\n"
-        if data.get('available'): resp += f"{data['available']}\n"
-        if data.get('url'): resp += f"🔗 {data['url']}"
+        order = {
+            'customer': username,
+            'phone': data.get('phone', client_phone),
+            'address': client_address,
+            'product': data['desc'],
+            'price': final_price,
+            'prepaid': 0,
+            'status': 'Новый',
+            'executor': 'Не назначен',
+            'user_id': user_id,
+            'url': data.get('url', ''),
+            'source': 'бот'
+        }
+        save_order(order)
+        
+        c['orders_count'] = c.get('orders_count', 0) + 1
+        update_client(user_id, {'orders_count': c['orders_count'], 'phone': client_phone})
+        
+        resp = f"✅ Заказ создан!\n📝 {data['desc'][:200]}\n📱 {client_phone}\n📍 {client_address}\n💰 {final_price} Br"
+        if discount_percent > 0: resp += f"\n🎉 Скидка: {discount_percent}% ({level_name})"
         send_message(chat_id, resp)
-
-        staff_msg = f"🔔 Новый заказ №{data['id']}!\n👤 {username} ({level_name})\n📝 {data['desc'][:150]}\n📱 {data['phone']}\n📍 {data.get('address','—')}\n"
-        if discount_percent > 0:
-            staff_msg += f"💰 База: {original_price} Br | -{discount_percent}% | Итог: {final_price} Br\n"
-        else:
-            staff_msg += f"💰 {final_price} Br\n"
-        if data.get('url'): staff_msg += f"🔗 {data['url']}"
-        send_to_staff(staff_msg)
+        send_to_staff(f"🔔 Новый заказ!\n👤 {username}\n📝 {data['desc'][:150]}\n💰 {final_price} Br")
 
 def auto_reply_loop():
     while True:
         time.sleep(300)
         now = time.time()
         for uid, lt in list(last_message_time.items()):
-            if now - lt > 3600 and clients.get(uid, {}).get('orders_count', 0) == 0:
-                try:
-                    send_message(uid, "👋 Давно не виделись! Пришлите ссылку на товар с brest-motors.by")
-                    last_message_time[uid] = now
-                except: pass
+            if now - lt > 3600:
+                c = get_client(uid)
+                if c.get('orders_count', 0) == 0:
+                    try:
+                        send_message(uid, "👋 Давно не виделись! Пришлите ссылку на товар.")
+                        last_message_time[uid] = now
+                    except: pass
 
 threading.Thread(target=auto_reply_loop, daemon=True).start()
 
-# ============ API (отдаём только НОВЫЕ заказы) ============
+# ============ API ============
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
@@ -375,18 +261,12 @@ def webhook():
 
 @app.route('/orders')
 def get_orders():
-    # Отдаём только заказы со статусом "Новый"
-    new_orders = [o for o in orders if o.get('status') == 'Новый']
-    return jsonify(new_orders)
+    return jsonify(get_new_orders())
 
-@app.route('/clients')
-def get_clients(): return jsonify(clients)
-
-@app.route('/clear')
-def clear_orders():
-    global orders
-    # Очищаем только импортированные (новые) заказы
-    orders = [o for o in orders if o.get('status') != 'Новый']
+@app.route('/orders/import', methods=['POST'])
+def import_orders():
+    ids = request.json.get('ids', [])
+    mark_imported(ids)
     return jsonify({"ok": True})
 
 @app.route('/')
@@ -394,5 +274,5 @@ def home(): return "OK"
 
 if __name__ == "__main__":
     requests.post(f"{URL}/setWebhook", json={"url": "https://telegram-orders-bot-7k4f.onrender.com/webhook"})
-    print("Бот v7 запущен")
+    print("Бот v8 с Supabase запущен")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
