@@ -37,17 +37,13 @@ RESTRICTED_CATEGORIES = [
     'cilindr', 'цилиндр', 'kolca', 'кольца', 'kolenval', 'коленвал', 'shatun', 'шатун',
     'starter', 'стартер', 'pruzhina', 'пружина', 'shnur', 'шнур', 'sceplenie', 'сцепление',
     'tormoz cepi', 'тормоз цепи', 'glushitel', 'глушитель', 'shlang', 'шланг', 'bak', 'бак',
-    'antivibracionnaya', 'антивибрационная', 'rukoyatka', 'рукоятка', 'kozhuh', 'кожух',
-    'natyazhitel', 'натяжитель', 'gajka', 'гайка', 'salnik', 'сальник', 'podshipnik', 'подшипник',
-    'prokladka', 'прокладка', 'iskrogasitel', 'искрогаситель',
+    'rukoyatka', 'рукоятка', 'kozhuh', 'кожух', 'natyazhitel', 'натяжитель', 'gajka', 'гайка',
+    'salnik', 'сальник', 'podshipnik', 'подшипник', 'prokladka', 'прокладка',
     'praimer', 'праймер', 'val', 'вал', 'shtanga', 'штанга', 'reduktor', 'редуктор',
-    'golovka', 'головка', 'nozh', 'нож', 'katushka s leskoj', 'катушка с леской',
-    'leska', 'леска', 'remen', 'ремень',
-    'maslyanyj filtr', 'масляный фильтр', 'klapan', 'клапан', 'maslosemnyj', 'маслосъемный',
-    'raspredval', 'распредвал', 'tolkatel', 'толкатель', 'koromyslo', 'коромысло',
-    'shchup', 'щуп', 'grm', 'грм',
-    'bolt', 'болт', 'adapter', 'адаптер', 'koleso', 'колесо', 'kryshka deki', 'крышка деки',
-    'travosbornik', 'травосборник', 'tros', 'трос', 'privod', 'привод', 'transmissiya', 'трансмиссия',
+    'golovka', 'головка', 'nozh', 'нож', 'leska', 'леска', 'remen', 'ремень',
+    'klapan', 'клапан', 'maslosemnyj', 'маслосъемный', 'shchup', 'щуп', 'grm', 'грм',
+    'bolt', 'болт', 'adapter', 'адаптер', 'koleso', 'колесо', 'travosbornik', 'травосборник',
+    'tros', 'трос', 'privod', 'привод', 'transmissiya', 'трансмиссия',
     'zapchast', 'запчаст', 'rashod', 'расход', 'maslo', 'масло', 'smazka', 'смазка',
     'filt', 'фильт', 'remkomplekt', 'ремкомплект', 'kryshka', 'крышка', 'probka', 'пробка',
 ]
@@ -107,34 +103,25 @@ def send_message(chat_id, text):
 
 def send_to_staff(text):
     for uid in STAFF_IDS:
-        try:
-            send_message(uid, text)
-        except:
-            pass
+        try: send_message(uid, text)
+        except: pass
 
 def parse_brest_motors(url):
     try:
         headers = {'User-Agent': 'Mozilla/5.0'}
         resp = requests.get(url, headers=headers, timeout=15)
         soup = BeautifulSoup(resp.text, 'html.parser')
-        
         result = {'url': url, 'desc': '', 'phone': '', 'price': 0, 'sku': '', 'brand': '', 'available': 'Проверить'}
-        
         h1 = soup.find('h1', itemprop='name')
         if h1: result['desc'] = h1.get_text(strip=True)
         elif soup.find('h1'): result['desc'] = soup.find('h1').get_text(strip=True)
-        
         sku = soup.find('span', itemprop='sku')
         if sku: result['sku'] = sku.get_text(strip=True)
-        
         brand = soup.find('span', itemprop='name')
         if brand and brand.parent.name == 'a': result['brand'] = brand.get_text(strip=True)
-        
         if result['sku']: result['desc'] += f' (Арт: {result["sku"]})'
         if result['brand']: result['desc'] += f' - {result["brand"]}'
-        
         price_found = False
-        
         for script in soup.find_all('script', type='application/ld+json'):
             try:
                 data = json.loads(script.string)
@@ -151,61 +138,32 @@ def parse_brest_motors(url):
                         price_found = True
                         break
             except: pass
-        
         if not price_found:
             for meta in soup.find_all('meta'):
                 prop = str(meta.get('property', '') + meta.get('itemprop', ''))
                 if 'price' in prop.lower():
                     content = meta.get('content', '')
                     nums = re.findall(r'\d+', str(content).replace(' ', ''))
-                    if nums:
-                        result['price'] = float(nums[0])
-                        price_found = True
-                        break
-        
+                    if nums: result['price'] = float(nums[0]); break
         if not price_found:
-            price_selectors = [
-                {'class': re.compile(r'price|Price|product-price|special-price|autocalc-product-price')},
-                {'itemprop': 'price'},
-                {'id': re.compile(r'price|Price')},
-            ]
-            for sel in price_selectors:
+            for sel in [{'class': re.compile(r'price|Price|product-price|autocalc')}, {'itemprop': 'price'}, {'id': re.compile(r'price|Price')}]:
                 el = soup.find(['span', 'div', 'p', 'strong', 'b'], sel)
                 if el:
-                    text = el.get_text(strip=True)
-                    text_clean = re.sub(r'[^\d.,]', '', text.replace(' ', ''))
-                    nums = re.findall(r'\d+', text_clean)
-                    if nums:
-                        result['price'] = float(nums[0])
-                        price_found = True
-                        break
-        
+                    nums = re.findall(r'\d+', re.sub(r'[^\d.,]', '', el.get_text(strip=True).replace(' ', '')))
+                    if nums: result['price'] = float(nums[0]); break
         if not price_found:
             text = soup.get_text()
-            price_patterns = [
-                r'цена[:\s]*(\d+[\.,\s]*\d*)',
-                r'стоимость[:\s]*(\d+[\.,\s]*\d*)',
-                r'(\d+[\.,\s]*\d*)\s*(?:р|руб|Br|BYN|бел\.руб)',
-                r'(\d+[\.,\s]*\d*)\s*(?:р\.|руб\.|Br)',
-            ]
-            for pat in price_patterns:
+            for pat in [r'цена[:\s]*(\d+[\.,\s]*\d*)', r'стоимость[:\s]*(\d+[\.,\s]*\d*)', r'(\d+[\.,\s]*\d*)\s*(?:р|руб|Br|BYN)', r'(\d+[\.,\s]*\d*)\s*(?:р\.|руб\.|Br)']:
                 match = re.search(pat, text, re.IGNORECASE)
                 if match:
-                    num_str = match.group(1).replace(' ', '').replace(',', '.')
-                    try:
-                        result['price'] = float(num_str)
-                        price_found = True
-                        break
+                    try: result['price'] = float(match.group(1).replace(' ', '').replace(',', '.')); break
                     except: pass
-        
         phones = re.findall(r'\+375\s?\d{2}\s?\d{3}\s?\d{2}\s?\d{2}', resp.text)
         if phones: result['phone'] = phones[0]
-        
         text = soup.get_text().lower()
         if 'в наличии' in text: result['available'] = '✅ В наличии'
         elif 'нет в наличии' in text or 'распродано' in text: result['available'] = '❌ Нет в наличии'
         elif 'под заказ' in text: result['available'] = '📦 Под заказ'
-        
         return result
     except Exception as e:
         print(f"Ошибка: {e}")
@@ -243,15 +201,31 @@ def handle_message(msg):
             if order:
                 order['status'] = 'Выполнен'
                 uid = order.get('user_id', '')
-                if uid:
-                    update_client_stats(uid, order.get('final_price', order.get('price', 0)), completed=True)
+                if uid: update_client_stats(uid, order.get('final_price', order.get('price', 0)), completed=True)
                 send_message(chat_id, f"✅ Заказ №{oid} выполнен!")
-                if uid:
-                    send_message(uid, f"🎉 Ваш заказ №{oid} выполнен!")
+                if uid: send_message(uid, f"🎉 Ваш заказ №{oid} выполнен!")
             else:
                 send_message(chat_id, "❌ Не найден")
         except:
             send_message(chat_id, "❌ /done НОМЕР")
+
+    elif text.startswith('/help'):
+        resp = "🤖 <b>Бот заказов brest-motors.by</b>\n\n"
+        resp += "<b>📋 Основные команды:</b>\n"
+        resp += "/start — регистрация и приветствие\n"
+        resp += "/profile — мой профиль и скидка\n"
+        resp += "/orders — мои заказы (последние 5)\n\n"
+        resp += "<b>📱 Контакты:</b>\n"
+        resp += "/phone +375291234567 — сохранить телефон\n"
+        resp += "/address г. Брест, ул. Ленина 5 — сохранить адрес\n\n"
+        resp += "<b>🛒 Как заказать:</b>\n"
+        resp += "1. Пришлите ссылку на товар с brest-motors.by\n"
+        resp += "2. Или напишите: описание, цена\n"
+        resp += "3. Бот сам найдет цену, артикул и наличие\n\n"
+        resp += "<b>💰 Скидки:</b>\n"
+        resp += "• Бронза — 0%\n• Серебро (2000+ Br) — 2%\n• Золото (4000+ Br) — 4%\n• Платина (6000+ Br) — 6%\n• Бриллиант (10000+ Br) — 7%\nНа запчасти Stihl/Husqvarna — макс. 2%\n\n"
+        resp += "<b>📞 Связь:</b>\nПо вопросам: +375 29 818 18 04"
+        send_message(chat_id, resp)
 
     # Клиентские команды
     elif text.startswith('/start'):
@@ -264,13 +238,9 @@ def handle_message(msg):
         level, data = get_loyalty_level(user_id)
         next_level = None
         for lvl, d in sorted(LOYALTY_LEVELS.items(), key=lambda x: x[1]['min_sum']):
-            if d['min_sum'] > c.get('total_sum', 0):
-                next_level = (lvl, d)
-                break
+            if d['min_sum'] > c.get('total_sum', 0): next_level = (lvl, d); break
         resp = f"👤 <b>Профиль</b>\n\nID: <code>{user_id}</code>\nИмя: {c['name']}\n📱 Тел: {c.get('phone','—')}\n📍 Адрес: {c.get('address','—')}\n📊 Заказов: {c.get('orders_count',0)}\n✅ Выполнено: {c.get('completed_orders',0)}\n💵 Сумма: {c.get('total_sum',0)} Br\n🏷️ Уровень: {data['name']} ({data['discount']}%)\n"
-        if next_level:
-            need = next_level[1]['min_sum'] - c.get('total_sum', 0)
-            resp += f"\n📈 До {next_level[1]['name']}: {max(0,need)} Br"
+        if next_level: resp += f"\n📈 До {next_level[1]['name']}: {max(0, next_level[1]['min_sum'] - c.get('total_sum', 0))} Br"
         send_message(chat_id, resp)
 
     elif text.startswith('/orders'):
@@ -291,36 +261,12 @@ def handle_message(msg):
         addr = text.split('/address ', 1)[1].strip()
         clients[user_id]['address'] = addr
         send_message(chat_id, f"✅ Адрес сохранён: {addr}")
-    elif text.startswith('/help'):
-        resp = "🤖 <b>Бот заказов brest-motors.by</b>\n\n"
-        resp += "<b>📋 Основные команды:</b>\n"
-        resp += "/start — регистрация и приветствие\n"
-        resp += "/profile — мой профиль и скидка\n"
-        resp += "/orders — мои заказы (последние 5)\n\n"
-        resp += "<b>📱 Контакты:</b>\n"
-        resp += "/phone +375291234567 — сохранить телефон\n"
-        resp += "/address г. Брест, ул. Ленина 5 — сохранить адрес\n\n"
-        resp += "<b>🛒 Как заказать:</b>\n"
-        resp += "1. Пришлите ссылку на товар с brest-motors.by\n"
-        resp += "2. Или напишите: описание, цена\n"
-        resp += "3. Бот сам найдет цену, артикул и наличие\n\n"
-        resp += "<b>💰 Скидки:</b>\n"
-        resp += "• Бронза — 0%\n"
-        resp += "• Серебро (2000+ Br) — 2%\n"
-        resp += "• Золото (4000+ Br) — 4%\n"
-        resp += "• Платина (6000+ Br) — 6%\n"
-        resp += "• Бриллиант (10000+ Br) — 7%\n"
-        resp += "На запчасти Stihl/Husqvarna — макс. 2%\n\n"
-        resp += "<b>📞 Связь:</b>\n"
-        resp += "По вопросам: +375 29 818 18 04\n"
-        resp += "Email: Kvalimbel@mail.ru"
-        send_message(chat_id, resp)
+
     else:
         urls = re.findall(r'https?://[^\s]+', text)
         client_phone = clients[user_id].get('phone', '')
         client_address = clients[user_id].get('address', '')
         
-        # Шаг 1: Нет телефона
         if not client_phone:
             if urls:
                 clients[user_id]['pending_url'] = urls[0]
@@ -335,7 +281,6 @@ def handle_message(msg):
                     send_message(chat_id, "📱 Укажите ваш номер телефона.\n\nФормат: +375 29 123 45 67")
             return
         
-        # Шаг 2: Нет адреса
         if not client_address:
             if urls:
                 clients[user_id]['pending_url'] = urls[0]
@@ -351,7 +296,6 @@ def handle_message(msg):
                     send_message(chat_id, f"✅ Адрес сохранён: {text.strip()}\n\nТеперь пришлите ссылку на товар или описание заказа.")
             return
         
-        # Шаг 3: Создание заказа
         pending_url = clients[user_id].get('pending_url', '')
         pending_text = clients[user_id].get('pending_text', '')
         if pending_url:
@@ -422,6 +366,7 @@ def auto_reply_loop():
 
 threading.Thread(target=auto_reply_loop, daemon=True).start()
 
+# ============ API (отдаём только НОВЫЕ заказы) ============
 @app.route('/webhook', methods=['POST'])
 def webhook():
     data = request.json
@@ -429,19 +374,25 @@ def webhook():
     return jsonify({"ok": True})
 
 @app.route('/orders')
-def get_orders(): return jsonify(orders)
+def get_orders():
+    # Отдаём только заказы со статусом "Новый"
+    new_orders = [o for o in orders if o.get('status') == 'Новый']
+    return jsonify(new_orders)
 
 @app.route('/clients')
 def get_clients(): return jsonify(clients)
 
 @app.route('/clear')
 def clear_orders():
-    global orders; orders = []; return jsonify({"ok": True})
+    global orders
+    # Очищаем только импортированные (новые) заказы
+    orders = [o for o in orders if o.get('status') != 'Новый']
+    return jsonify({"ok": True})
 
 @app.route('/')
 def home(): return "OK"
 
 if __name__ == "__main__":
     requests.post(f"{URL}/setWebhook", json={"url": "https://telegram-orders-bot-7k4f.onrender.com/webhook"})
-    print("Бот v6 запущен")
+    print("Бот v7 запущен")
     app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8000)))
