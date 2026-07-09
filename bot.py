@@ -12,8 +12,10 @@ TOKEN = "8606571929:AAFqbhJqyunPuKO4zDlaedNHYO_JGXPaLhQ"
 URL = f"https://api.telegram.org/bot{TOKEN}"
 
 # ============ ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ============
-SUPABASE_URL = "https://ophusgconubcufrzobzyc.supabase.co"
-SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9waHVzZ2NvbnViY3Vmcm9ienljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODc5MjQsImV4cCI6MjA5OTE2MzkyNH0.a1DBm4PkDt1NHHyIDfF_xFqZd7qEhSGwUfdZbnvXKXs"
+# Используем новые, проверенные данные проекта
+SUPABASE_URL = "https://ophusgconubcufrobzyc.supabase.co"
+SUPABASE_KEY = "sb_publishable_Oi1gbpCpzhfrZ6ZocysTuw__bbAJRzA"
+
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 ADMIN_IDS = ["8171279171"]
