@@ -10,23 +10,13 @@ from supabase import create_client
 
 TOKEN = "8606571929:AAFqbhJqyunPuKO4zDlaedNHYO_JGXPaLhQ"
 URL = f"https://api.telegram.org/bot{TOKEN}"
-
 # ============ ПОДКЛЮЧЕНИЕ К БАЗЕ ДАННЫХ ============
-from httpx import SyncHTTPTransport
-
+# Теперь мы точно знаем, что в ID есть буквы 'rzo'!
 SUPABASE_URL = "https://ophusgconubcufrzobzyc.supabase.co"
 SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9waHVzZ2NvbnViY3Vmcm9ienljIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODM1ODc5MjQsImV4cCI6MjA5OTE2MzkyNH0.a1DBm4PkDt1NHHyIDfF_xFqZd7qEhSGwUfdZbnvXKXs"
 
-# Принудительно отключаем проверку локального DNS на Render, который ломал подключение
-options = {"http_client": requests.Session()} 
-try:
-    from supabase.client import ClientOptions
-    # Передаем кастомный транспорт, чтобы обойти ошибку "Name or service not known"
-    options = ClientOptions(postgrest_client_options={"transport": SyncHTTPTransport(retries=3)})
-except:
-    pass
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY, options=options)
 
 ADMIN_IDS = ["8171279171"]
 STAFF_IDS = ["8171279171"]
